@@ -1,0 +1,592 @@
+================================================================================
+GUIA COMPLETO DE DEPLOY - PORTAL NETBOX + AWX
+Sistema de Provisionamento com Streamlit
+================================================================================
+
+REQUISITOS:
+- Servidor Linux (Ubuntu 20.04/22.04 ou Debian 11/12)
+- Acesso root ou sudo
+- Domínio configurado (opcional, mas recomendado)
+- Portas 80 e 443 liberadas no firewall
+
+================================================================================
+PARTE 1 - PREPARAÇÃO DO SERVIDOR
+================================================================================
+
+1.1 - CONECTAR NO SERVIDOR
+--------------------------
+ssh usuario@IP_DO_SERVIDOR
+
+
+1.2 - ATUALIZAR O SISTEMA
+--------------------------
+sudo apt update
+sudo apt upgrade -y
+
+
+1.3 - INSTALAR DEPENDÊNCIAS
+--------------------------
+sudo apt install -y python3 python3-pip python3-venv nginx git curl
+
+
+1.4 - CRIAR USUÁRIO PARA A APLICAÇÃO
+--------------------------
+sudo useradd -m -s /bin/bash streamlit
+sudo passwd streamlit
+# Digite uma senha quando solicitado
+
+
+================================================================================
+PARTE 2 - CONFIGURAR A APLICAÇÃO
+================================================================================
+
+2.1 - MUDAR PARA O USUÁRIO STREAMLIT
+--------------------------
+sudo su - streamlit
+
+
+2.2 - CRIAR DIRETÓRIO DO PROJETO
+--------------------------
+mkdir ~/netbox-portal
+cd ~/netbox-portal
+
+
+2.3 - CRIAR AMBIENTE VIRTUAL PYTHON
+--------------------------
+python3 -m venv venv
+source venv/bin/activate
+
+
+2.4 - CRIAR ARQUIVO requirements.txt
+--------------------------
+cat > requirements.txt << 'EOF'
+streamlit
+pynetbox
+requests
+python-dotenv
+EOF
+
+
+2.5 - INSTALAR DEPENDÊNCIAS PYTHON
+--------------------------
+pip install -r requirements.txt
+
+
+2.6 - CRIAR ARQUIVO .env
+--------------------------
+nano .env
+
+# Cole o seguinte conteúdo (ajuste com seus dados):
+NETBOX_URL=https://seu-netbox.empresa.com
+NETBOX_TOKEN=seu_token_netbox_aqui
+AWX_URL=http://seu-awx.empresa.com
+AWX_USER=admin
+AWX_PASSWORD=sua_senha_awx
+
+# Salvar: Ctrl+O, Enter, Ctrl+X
+
+
+2.7 - CRIAR ARQUIVO app.py
+--------------------------
+nano app.py
+
+# Cole TODO o código Python da aplicação aqui
+# (O código completo que foi gerado anteriormente)
+
+# Salvar: Ctrl+O, Enter, Ctrl+X
+
+
+2.8 - TESTAR A APLICAÇÃO LOCALMENTE
+--------------------------
+streamlit run app.py
+
+# Acesse: http://IP_DO_SERVIDOR:8501
+# Se funcionar, pressione Ctrl+C para parar
+# Digite 'exit' para sair do usuário streamlit
+
+
+================================================================================
+PARTE 3 - CRIAR SERVIÇO SYSTEMD
+================================================================================
+
+3.1 - VOLTAR PARA USUÁRIO COM SUDO
+--------------------------
+exit  # Sai do usuário streamlit
+
+
+3.2 - CRIAR ARQUIVO DE SERVIÇO
+--------------------------
+sudo nano /etc/systemd/system/netbox-portal.service
+
+# Cole o seguinte conteúdo:
+[Unit]
+Description=NetBox AWX Portal
+After=network.target
+
+[Service]
+Type=simple
+User=streamlit
+WorkingDirectory=/home/streamlit/netbox-portal
+Environment="PATH=/home/streamlit/netbox-portal/venv/bin"
+ExecStart=/home/streamlit/netbox-portal/venv/bin/streamlit run app.py --server.port=8501 --server.address=0.0.0.0 --server.headless=true --server.enableCORS=false --server.enableXsrfProtection=true
+
+Restart=always
+RestartSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+
+# Salvar: Ctrl+O, Enter, Ctrl+X
+
+
+3.3 - ATIVAR E INICIAR O SERVIÇO
+--------------------------
+sudo systemctl daemon-reload
+sudo systemctl enable netbox-portal
+sudo systemctl start netbox-portal
+
+
+3.4 - VERIFICAR STATUS
+--------------------------
+sudo systemctl status netbox-portal
+
+# Deve mostrar "active (running)" em verde
+
+
+3.5 - VER LOGS (OPCIONAL)
+--------------------------
+sudo journalctl -u netbox-portal -f
+# Pressione Ctrl+C para sair
+
+
+================================================================================
+PARTE 4 - CONFIGURAR NGINX (PROXY REVERSO)
+================================================================================
+
+4.1 - CRIAR CONFIGURAÇÃO DO NGINX
+--------------------------
+sudo nano /etc/nginx/sites-available/netbox-portal
+
+# Cole o seguinte conteúdo (ALTERE O DOMÍNIO):
+server {
+    listen 80;
+    server_name netbox-portal.sua-empresa.com;
+    
+    access_log /var/log/nginx/netbox-portal-access.log;
+    error_log /var/log/nginx/netbox-portal-error.log;
+    
+    client_max_body_size 50M;
+    
+    location / {
+        proxy_pass http://localhost:8501;
+        proxy_http_version 1.1;
+        
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        proxy_read_timeout 86400;
+        proxy_connect_timeout 86400;
+        proxy_send_timeout 86400;
+    }
+    
+    location /_stcore/stream {
+        proxy_pass http://localhost:8501/_stcore/stream;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400;
+    }
+    
+    location /_stcore/health {
+        proxy_pass http://localhost:8501/_stcore/health;
+        access_log off;
+    }
+}
+
+# Salvar: Ctrl+O, Enter, Ctrl+X
+
+
+4.2 - ATIVAR SITE NO NGINX
+--------------------------
+sudo ln -s /etc/nginx/sites-available/netbox-portal /etc/nginx/sites-enabled/
+
+
+4.3 - REMOVER SITE PADRÃO (OPCIONAL)
+--------------------------
+sudo rm /etc/nginx/sites-enabled/default
+
+
+4.4 - TESTAR CONFIGURAÇÃO
+--------------------------
+sudo nginx -t
+
+# Deve mostrar "syntax is ok" e "test is successful"
+
+
+4.5 - REINICIAR NGINX
+--------------------------
+sudo systemctl restart nginx
+
+
+4.6 - VERIFICAR STATUS DO NGINX
+--------------------------
+sudo systemctl status nginx
+
+
+================================================================================
+PARTE 5 - CONFIGURAR SSL/HTTPS (LET'S ENCRYPT)
+================================================================================
+
+5.1 - INSTALAR CERTBOT
+--------------------------
+sudo apt install -y certbot python3-certbot-nginx
+
+
+5.2 - OBTER CERTIFICADO SSL
+--------------------------
+sudo certbot --nginx -d netbox-portal.sua-empresa.com
+
+# Siga as instruções:
+# 1. Digite seu email
+# 2. Aceite os termos (Y)
+# 3. Escolha se quer receber emails (Y ou N)
+# 4. Escolha opção 2 (redirecionar HTTP para HTTPS)
+
+
+5.3 - TESTAR RENOVAÇÃO AUTOMÁTICA
+--------------------------
+sudo certbot renew --dry-run
+
+# Deve mostrar "Congratulations, all simulated renewals succeeded"
+
+
+5.4 - VERIFICAR TIMER DE RENOVAÇÃO
+--------------------------
+sudo systemctl status certbot.timer
+
+
+================================================================================
+PARTE 6 - CONFIGURAR FIREWALL
+================================================================================
+
+6.1 - INSTALAR E CONFIGURAR UFW
+--------------------------
+sudo apt install -y ufw
+
+
+6.2 - PERMITIR CONEXÕES SSH, HTTP E HTTPS
+--------------------------
+sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+
+
+6.3 - BLOQUEAR ACESSO DIRETO À PORTA 8501
+--------------------------
+sudo ufw deny 8501/tcp
+
+
+6.4 - ATIVAR FIREWALL
+--------------------------
+sudo ufw enable
+
+# Digite 'y' para confirmar
+
+
+6.5 - VERIFICAR STATUS
+--------------------------
+sudo ufw status
+
+
+================================================================================
+PARTE 7 - VERIFICAÇÕES FINAIS
+================================================================================
+
+7.1 - VERIFICAR SE TUDO ESTÁ RODANDO
+--------------------------
+# Verificar serviço Streamlit
+sudo systemctl status netbox-portal
+
+# Verificar NGINX
+sudo systemctl status nginx
+
+# Verificar se aplicação responde
+curl http://localhost:8501/_stcore/health
+
+
+7.2 - TESTAR ACESSO EXTERNO
+--------------------------
+# No seu navegador, acesse:
+https://netbox-portal.sua-empresa.com
+
+# Você deve ver a tela de login
+
+
+7.3 - FAZER LOGIN
+--------------------------
+Usuário: admin
+Senha: admin123
+
+
+================================================================================
+PARTE 8 - COMANDOS ÚTEIS PARA GERENCIAMENTO
+================================================================================
+
+8.1 - VER LOGS DA APLICAÇÃO
+--------------------------
+sudo journalctl -u netbox-portal -f
+
+
+8.2 - REINICIAR APLICAÇÃO
+--------------------------
+sudo systemctl restart netbox-portal
+
+
+8.3 - PARAR APLICAÇÃO
+--------------------------
+sudo systemctl stop netbox-portal
+
+
+8.4 - INICIAR APLICAÇÃO
+--------------------------
+sudo systemctl start netbox-portal
+
+
+8.5 - VER LOGS DO NGINX
+--------------------------
+sudo tail -f /var/log/nginx/netbox-portal-access.log
+sudo tail -f /var/log/nginx/netbox-portal-error.log
+
+
+8.6 - ATUALIZAR APLICAÇÃO
+--------------------------
+# Como usuário streamlit:
+sudo su - streamlit
+cd ~/netbox-portal
+source venv/bin/activate
+
+# Editar o código
+nano app.py
+
+# Salvar e sair do usuário
+exit
+
+# Reiniciar serviço
+sudo systemctl restart netbox-portal
+
+
+================================================================================
+PARTE 9 - ADICIONAR NOVOS USUÁRIOS
+================================================================================
+
+9.1 - EDITAR O ARQUIVO app.py
+--------------------------
+sudo su - streamlit
+cd ~/netbox-portal
+nano app.py
+
+
+9.2 - LOCALIZAR O DICIONÁRIO USUARIOS
+--------------------------
+# Procure por:
+USUARIOS = {
+    'admin': {
+        ...
+    }
+}
+
+
+9.3 - ADICIONAR NOVO USUÁRIO
+--------------------------
+# Adicione dentro do dicionário:
+    'novo.usuario': {
+        'senha_hash': hash_senha('senha_do_usuario'),
+        'nome': 'Nome Completo',
+        'email': 'email@empresa.com'
+    },
+
+
+9.4 - SALVAR E REINICIAR
+--------------------------
+# Salvar: Ctrl+O, Enter, Ctrl+X
+exit
+sudo systemctl restart netbox-portal
+
+
+================================================================================
+PARTE 10 - BACKUP E RESTAURAÇÃO
+================================================================================
+
+10.1 - FAZER BACKUP
+--------------------------
+sudo su - streamlit
+cd ~
+tar -czf netbox-portal-backup-$(date +%Y%m%d).tar.gz netbox-portal/
+exit
+
+
+10.2 - COPIAR BACKUP PARA SUA MÁQUINA
+--------------------------
+# No seu computador local:
+scp streamlit@IP_DO_SERVIDOR:/home/streamlit/netbox-portal-backup-*.tar.gz .
+
+
+10.3 - RESTAURAR BACKUP
+--------------------------
+sudo su - streamlit
+cd ~
+tar -xzf netbox-portal-backup-YYYYMMDD.tar.gz
+exit
+sudo systemctl restart netbox-portal
+
+
+================================================================================
+TROUBLESHOOTING - RESOLUÇÃO DE PROBLEMAS
+================================================================================
+
+PROBLEMA 1: Aplicação não inicia
+--------------------------
+# Ver logs detalhados:
+sudo journalctl -u netbox-portal -n 100
+
+# Verificar se o Python está correto:
+sudo su - streamlit
+cd ~/netbox-portal
+source venv/bin/activate
+python --version
+
+
+PROBLEMA 2: Erro 502 Bad Gateway
+--------------------------
+# Verificar se aplicação está rodando:
+curl http://localhost:8501/_stcore/health
+
+# Ver logs do NGINX:
+sudo tail -f /var/log/nginx/netbox-portal-error.log
+
+# Reiniciar serviços:
+sudo systemctl restart netbox-portal
+sudo systemctl restart nginx
+
+
+PROBLEMA 3: SSL não funciona
+--------------------------
+# Verificar certificados:
+sudo certbot certificates
+
+# Renovar certificado:
+sudo certbot renew --force-renewal
+
+# Reiniciar NGINX:
+sudo systemctl restart nginx
+
+
+PROBLEMA 4: Não consegue fazer login
+--------------------------
+# Verificar arquivo .env:
+sudo su - streamlit
+cd ~/netbox-portal
+cat .env
+
+# Verificar se as credenciais estão corretas no código
+
+
+PROBLEMA 5: Aplicação lenta
+--------------------------
+# Ver uso de recursos:
+htop
+
+# Ver processos do Streamlit:
+ps aux | grep streamlit
+
+# Reiniciar aplicação:
+sudo systemctl restart netbox-portal
+
+
+================================================================================
+SEGURANÇA ADICIONAL (RECOMENDADO)
+================================================================================
+
+1. MUDAR SENHAS PADRÃO
+--------------------------
+# Edite o app.py e mude as senhas dos usuários de teste
+
+
+2. CONFIGURAR FAIL2BAN (PROTEÇÃO CONTRA BRUTE FORCE)
+--------------------------
+sudo apt install -y fail2ban
+sudo systemctl enable fail2ban
+sudo systemctl start fail2ban
+
+
+3. MANTER SISTEMA ATUALIZADO
+--------------------------
+sudo apt update
+sudo apt upgrade -y
+
+
+4. CONFIGURAR BACKUPS AUTOMÁTICOS
+--------------------------
+# Criar script de backup automático (cron)
+sudo crontab -e
+
+# Adicione (backup diário às 2h da manhã):
+0 2 * * * /usr/bin/tar -czf /backup/netbox-portal-$(date +\%Y\%m\%d).tar.gz /home/streamlit/netbox-portal
+
+
+================================================================================
+INFORMAÇÕES IMPORTANTES
+================================================================================
+
+CREDENCIAIS PADRÃO:
+- Usuário: admin
+- Senha: admin123
+
+- Usuário: joao.silva
+- Senha: senha123
+
+PORTAS UTILIZADAS:
+- 8501: Streamlit (apenas localhost)
+- 80: HTTP (redireciona para HTTPS)
+- 443: HTTPS (acesso público)
+
+ARQUIVOS IMPORTANTES:
+- /home/streamlit/netbox-portal/app.py (código da aplicação)
+- /home/streamlit/netbox-portal/.env (configurações)
+- /etc/systemd/system/netbox-portal.service (serviço)
+- /etc/nginx/sites-available/netbox-portal (configuração NGINX)
+
+LOGS:
+- Aplicação: sudo journalctl -u netbox-portal -f
+- NGINX Access: /var/log/nginx/netbox-portal-access.log
+- NGINX Error: /var/log/nginx/netbox-portal-error.log
+
+================================================================================
+SUPORTE E DOCUMENTAÇÃO
+================================================================================
+
+Documentação Streamlit: https://docs.streamlit.io
+Documentação NGINX: https://nginx.org/en/docs/
+Documentação Let's Encrypt: https://letsencrypt.org/docs/
+
+================================================================================
+FIM DO GUIA
+================================================================================
+
+Data de criação: Janeiro 2025
+Versão: 1.0
+
+Para suporte adicional, consulte a documentação oficial ou entre em contato
+com o administrador do sistema.
+
+IMPORTANTE: Sempre faça backup antes de fazer alterações no sistema!
+
+================================================================================
