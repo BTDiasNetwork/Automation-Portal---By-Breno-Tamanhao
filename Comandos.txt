@@ -1,0 +1,3 @@
+systemctl enable streamlitsite 
+systemctl status streamlitsite
+systemctl start streamlitsite
