@@ -1,0 +1,19 @@
+streamlit
+pynetbox
+requests
+python-dotenv
+urllib3
+
+#import streamlit as st
+#import pynetbox
+#import requests
+#import os
+#from dotenv import load_dotenv
+#import urllib3
+#import time
+#import hashlib
+
+
+# MASTER KEY
+  #admin
+  #ish@init123!@#
