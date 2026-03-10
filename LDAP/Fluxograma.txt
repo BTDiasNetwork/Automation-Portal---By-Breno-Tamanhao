@@ -1,0 +1,33 @@
+O que você tem agora
+
+Fluxo funcionando:
+
+Cliente envia Basic Auth
+
+API faz bind com conta de serviço
+
+AD valida:
+
+sAMAccountName
+
+memberOf=GA-Portal-Automation
+
+API testa senha real do usuário
+
+Retorna:
+
+200 → OK
+
+401 → senha errada
+
+403 → fora do grupo
+
+Isso já está pronto para colocar atrás de:
+
+NGINX auth_request
+
+Portal interno
+
+API Gateway
+
+Ferramenta interna
