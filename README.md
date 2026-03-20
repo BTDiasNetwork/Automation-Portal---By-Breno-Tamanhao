@@ -1,4 +1,6 @@
-SPOG criado para gerenciar fim a fim a infraestrutura de rede. Utilizei python como Backend e Streamlit como frontend.
+# Portal de Automação by Breno Tamanhão Dias
+
+*SPOG* criado para gerenciar fim a fim a infraestrutura de rede. Utilizei python como Backend e streamlit como Frontend.
 
 A biblioteca pynetbox foi utilizada para integração com netbox, com métodos e funções padronizadas. 
 Já a biblioteca requests foi utilizada para realizar posts no job já estruturado no AWX, passando extra_vars[] baseado nos recursos alocados no SoT.
