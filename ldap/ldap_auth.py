@@ -6,7 +6,7 @@ app = Flask(__name__)
 LDAP_SERVER = "10.100.250.10"
 BASE_DN = "DC=dc,DC=corp"
 SERVICE_USER = "PORTAL-AUTOMATION-LDAP@dc.corp"
-SERVICE_PASSWORD = "ish@init123!@#"
+SERVICE_PASSWORD = "abc123"
 
 GROUP_DN = "CN=GA-Portal-Automation,OU=Admins,OU=Groups,OU=Datacenter,DC=dc,DC=corp"
 
